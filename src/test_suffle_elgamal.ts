@@ -9,7 +9,7 @@
 import { prime, randBetween, modPow, modInv } from 'bigint-crypto-utils';
 import crypto from 'crypto';
 
-const PLAYER_COUNT = 5;
+const PLAYER_COUNT = 8;
 const DECK_SIZE = 52;
 const COMMUNITY_CARDS = 5;
 const CARDS_PER_PLAYER = 2;
@@ -214,13 +214,19 @@ function runElGamalShuffleDemo(): void {
   console.log('\n✅ ElGamal Shuffle/Deal Demo completed!');
 
   let riverCardD: any = riverCard;
+  riverCardD = decrypt(riverCardD, players[1].sk);
+  console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
   riverCardD = decrypt(riverCardD, players[3].sk);
   console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
   riverCardD = decrypt(riverCardD, players[2].sk);
   console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
-  riverCardD = decrypt(riverCardD, players[1].sk);
-  console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
   riverCardD = decrypt(riverCardD, players[4].sk);
+  console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
+  riverCardD = decrypt(riverCardD, players[6].sk);
+  console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
+  riverCardD = decrypt(riverCardD, players[7].sk);
+  console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
+  riverCardD = decrypt(riverCardD, players[5].sk);
   console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
   riverCardD = decrypt(riverCardD, players[0].sk);
   console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:",riverCardD, getCardName(Number(riverCardD.c2)))
