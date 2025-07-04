@@ -55,12 +55,52 @@ function randomBigInt(min: bigint, max: bigint): bigint {
   return min + rnd;
 }
 
-// 2. Key generation for players
-interface KeyPair { sk: bigint, pk: bigint }
-function genKeyPair(): KeyPair {
+// TEE Server key pair interface
+interface TEEServerKeyPair {
+  sk: bigint;  // TEE server private key
+  pk: bigint;  // TEE server public key
+}
+
+// Generate TEE server key pair
+function genTEEServerKeyPair(): TEEServerKeyPair {
   const sk = randomBigInt(2n, p - 1n);
   const pk = modPow(g, sk, p);
   return { sk, pk };
+}
+
+// 2. Key generation for players with Diffie-Hellman
+interface KeyPair { 
+  sk: bigint, 
+  pk: bigint, 
+  shared_sk: bigint, 
+  shared_pk: bigint 
+}
+
+function genKeyPair(): KeyPair {
+  const sk = randomBigInt(2n, p - 1n);
+  const pk = modPow(g, sk, p);
+  return { sk, pk, shared_sk: BigInt(0), shared_pk: BigInt(0) };
+}
+
+// Diffie-Hellman key exchange between player and TEE server
+function performDiffieHellmanExchange(playerKeyPair: KeyPair, teeServerKeyPair: TEEServerKeyPair): KeyPair {
+  // Player computes shared secret: (TEE_pk)^player_sk mod p
+  const shared_sk = modPow(teeServerKeyPair.pk, playerKeyPair.sk, p);
+  
+  // Player's shared public key: g^shared_sk mod p
+  const shared_pk = modPow(g, shared_sk, p);
+  
+  return {
+    ...playerKeyPair,
+    shared_sk,
+    shared_pk
+  };
+}
+
+// Generate aggregate public key using Diffie-Hellman shared keys
+function generateAggregatePublicKey(players: KeyPair[]): bigint {
+  // Aggregate public key is the product of all shared public keys
+  return players.reduce((acc, player) => (acc * player.shared_pk) % p, BigInt(1));
 }
 
 // 5. ElGamal encryption
@@ -104,8 +144,8 @@ function shuffleAndReencrypt(deck: Cipher[], pk: bigint): Cipher[] {
 function collectiveDecrypt(cipher: Cipher, players: KeyPair[]): bigint {
   let c = { ...cipher };
   for (const kp of players) {
-    // Each player partially decrypts
-    const s = modPow(c.c1, kp.sk, p);
+    // Each player partially decrypts using their shared secret key
+    const s = modPow(c.c1, kp.shared_sk, p);
     const sInv = modInv(s, p);
     c.c2 = (c.c2 * sInv) % p;
   }
@@ -121,15 +161,15 @@ function decryptPlayerCards(playerCards: Cipher[], players: KeyPair[], requestin
   
   return playerCards.map(card => {
     let c = { ...card };
-    // Other players decrypt first
+    // Other players decrypt first using their shared secret keys
     for (const kp of otherPlayers) {
-      const s = modPow(c.c1, kp.sk, p);
+      const s = modPow(c.c1, kp.shared_sk, p);
       const sInv = modInv(s, p);
       c.c2 = (c.c2 * sInv) % p;
     }
     
-    // Requesting player decrypts last to reveal the card
-    const s = modPow(c.c1, requestingPlayer.sk, p);
+    // Requesting player decrypts last to reveal the card using their shared secret key
+    const s = modPow(c.c1, requestingPlayer.shared_sk, p);
     const sInv = modInv(s, p);
     const plaintext = (c.c2 * sInv) % p;
     return getCardName(Number(plaintext));
@@ -138,7 +178,11 @@ function decryptPlayerCards(playerCards: Cipher[], players: KeyPair[], requestin
 
 // Main container function for the ElGamal shuffle/deal demo
 function runElGamalShuffleDemo(): void {
-  console.log('🚀 Starting ElGamal Shuffle/Deal Demo...\n');
+  console.log('🚀 Starting ElGamal Shuffle/Deal Demo with Diffie-Hellman TEE Server...\n');
+
+  // 1. Generate TEE server key pair
+  const teeServer = genTEEServerKeyPair();
+  console.log('🔐 TEE Server public key:', teeServer.pk.toString());
 
   // 2. Generate keys for all players
   const players: KeyPair[] = [];
@@ -146,10 +190,18 @@ function runElGamalShuffleDemo(): void {
     players.push(genKeyPair());
   }
 
-  // 3. Aggregate public key (product of all pks)
-  const aggPk = players.reduce((acc, kp) => (acc * kp.pk) % p, BigInt(1));
+  // 3. Perform Diffie-Hellman key exchange between each player and TEE server
+  console.log('🤝 Performing Diffie-Hellman key exchanges...');
+  for (let i = 0; i < PLAYER_COUNT; i++) {
+    players[i] = performDiffieHellmanExchange(players[i], teeServer);
+    console.log(`Player ${i + 1} shared public key:`, players[i].shared_pk.toString());
+  }
 
-  // 4. Deck preparation
+  // 4. Generate aggregate public key using Diffie-Hellman shared keys
+  const aggPk = generateAggregatePublicKey(players);
+  console.log('🔑 Aggregate public key (Diffie-Hellman):', aggPk.toString());
+
+  // 5. Deck preparation
   let deck: number[] = Array.from({ length: DECK_SIZE }, (_, i) => i + 1);
 
   // 6. Encrypt deck with aggregate public key
@@ -214,21 +266,21 @@ function runElGamalShuffleDemo(): void {
   console.log('\n✅ ElGamal Shuffle/Deal Demo completed!');
 
   let riverCardD: any = riverCard;
-  riverCardD = decrypt(riverCardD, players[1].sk);
+  riverCardD = decrypt(riverCardD, players[1].shared_sk);
   console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
-  riverCardD = decrypt(riverCardD, players[3].sk);
+  riverCardD = decrypt(riverCardD, players[3].shared_sk);
   console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
-  riverCardD = decrypt(riverCardD, players[2].sk);
+  riverCardD = decrypt(riverCardD, players[2].shared_sk);
   console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
-  riverCardD = decrypt(riverCardD, players[4].sk);
+  riverCardD = decrypt(riverCardD, players[4].shared_sk);
   console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
-  riverCardD = decrypt(riverCardD, players[6].sk);
+  riverCardD = decrypt(riverCardD, players[6].shared_sk);
   console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
-  riverCardD = decrypt(riverCardD, players[7].sk);
+  riverCardD = decrypt(riverCardD, players[7].shared_sk);
   console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
-  riverCardD = decrypt(riverCardD, players[5].sk);
+  riverCardD = decrypt(riverCardD, players[5].shared_sk);
   console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:", riverCardD)
-  riverCardD = decrypt(riverCardD, players[0].sk);
+  riverCardD = decrypt(riverCardD, players[0].shared_sk);
   console.log("🚀 ~ runElGamalShuffleDemo ~ riverCardD:",riverCardD, getCardName(Number(riverCardD.c2)))
 
   
